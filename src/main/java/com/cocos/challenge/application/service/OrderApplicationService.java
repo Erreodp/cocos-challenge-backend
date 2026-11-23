@@ -13,6 +13,7 @@ import com.cocos.challenge.domain.service.OrderPolicy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import org.springframework.transaction.annotation.Transactional;
 
 public class OrderApplicationService implements SubmitOrderUseCase, CancelOrderUseCase {
     private final AccountPort accounts;
@@ -29,9 +30,9 @@ public class OrderApplicationService implements SubmitOrderUseCase, CancelOrderU
     }
 
     @Override
+    @Transactional
     public Order submit(long userId, Long instrumentId, Order.Side side, Order.Type type,
                         Long quantity, BigDecimal amount, BigDecimal price) {
-        if (!accounts.exists(userId)) throw new ApplicationException.NotFound("No existe el usuario " + userId);
         if (instrumentId == null) throw new ApplicationException.BadRequest("instrumentId es obligatorio");
         if (side == null || type == null) throw new ApplicationException.BadRequest("side y type son obligatorios");
         boolean hasQuantity = quantity != null;
@@ -48,6 +49,8 @@ public class OrderApplicationService implements SubmitOrderUseCase, CancelOrderU
             throw new ApplicationException.BadRequest("No se debe informar price para órdenes MARKET");
         }
 
+        orders.lockOrderSubmissions();
+        if (!accounts.exists(userId)) throw new ApplicationException.NotFound("No existe el usuario " + userId);
         Instrument instrument = instruments.findById(instrumentId)
                 .orElseThrow(() -> new ApplicationException.NotFound("No existe el instrumento " + instrumentId));
         if (instrument.isCurrency()) throw new ApplicationException.BadRequest("No se admiten órdenes sobre MONEDA");

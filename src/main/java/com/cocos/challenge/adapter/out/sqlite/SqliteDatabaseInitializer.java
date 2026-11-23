@@ -97,4 +97,5 @@ public class SqliteDatabaseInitializer implements ApplicationRunner {
             connection.setAutoCommit(originalAutoCommit);
         }
     }
+
 }

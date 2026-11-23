@@ -3,8 +3,7 @@
 API REST en Java 21, Spring Boot 3.5 y SQLite, organizada con arquitectura hexagonal.
 
 El requerimiento original está en [`docs/cocos-challenge`](docs/cocos-challenge).
-Aunque allí se menciona Node.js como opción técnica, este repositorio conserva la
-implementación Java/Spring.
+La solución implementa el challenge con Java 21, Spring Boot y SQLite.
 El estado y contexto para continuar el trabajo están en [`docs/agent.md`](docs/agent.md).
 
 ## Ejecutar
@@ -36,6 +35,8 @@ los supuestos de cálculo están en `docs/API.md`.
 
 Swagger UI: `http://localhost:8080/swagger-ui/index.html`. La colección Postman
 está en `docs/postman/Cocos-Challenge.postman_collection.json`.
+La [referencia detallada de la API](docs/API.md) documenta los campos, fórmulas,
+ejemplos de respuestas, errores y estados de órdenes.
 
 ## Estructura hexagonal
 

@@ -19,7 +19,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -71,7 +78,7 @@ class OrderRestControllerIntegrationTest {
 
         mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
                         .contentType("application/json")
-                        .content(orderRequest("BUY", "MARKET", null)))
+                        .content(orderRequest("BUY", "MARKET", 1, null)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("FILLED"))
                 .andExpect(jsonPath("$.quantity").value(1))
@@ -97,7 +104,8 @@ class OrderRestControllerIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/users/{userId}/orders']").exists())
                 .andReturn();
 
-        assertThat(openApi.getResponse().getContentAsString()).contains("dailyReturnPercent");
+        assertThat(openApi.getResponse().getContentAsString())
+                .contains("dailyReturnPercent", "MARKET por monto", "ApiError", "\"400\"");
 
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk());
@@ -120,13 +128,75 @@ class OrderRestControllerIntegrationTest {
     }
 
     @Test
+    void filledBuyThenSellUpdatesCashAndOpenPosition() throws Exception {
+        BigDecimal price = latestPrice();
+
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(orderRequest("BUY", "MARKET", 5, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FILLED"));
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(orderRequest("SELL", "MARKET", 2, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FILLED"));
+
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions[0].quantity").value(3))
+                .andExpect(jsonPath("$.positions[0].availableQuantity").value(3))
+                .andExpect(jsonPath("$.cashBalance").value(
+                        BigDecimal.valueOf(1_000_000).subtract(price.multiply(BigDecimal.valueOf(3))).doubleValue()));
+    }
+
+    @Test
+    void concurrentMarketBuysCannotSpendTheSameCashTwice() throws Exception {
+        jdbc.update("DELETE FROM orders WHERE userId=?", USER_ID);
+        BigDecimal price = latestPrice();
+        insertCash(price.setScale(0, java.math.RoundingMode.CEILING).longValueExact());
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            List<Future<MvcResult>> requests = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                requests.add(executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to start concurrent order requests");
+                    }
+                    return mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                                    .contentType("application/json")
+                                    .content(orderRequest("BUY", "MARKET", 1, null)))
+                            .andReturn();
+                }));
+            }
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            List<String> statuses = new ArrayList<>();
+            for (Future<MvcResult> request : requests) {
+                MvcResult result = request.get(15, TimeUnit.SECONDS);
+                assertThat(result.getResponse().getStatus()).isEqualTo(201);
+                statuses.add(objectMapper.readTree(result.getResponse().getContentAsString())
+                        .get("status").asText());
+            }
+
+            assertThat(statuses).containsExactlyInAnyOrder("FILLED", "REJECTED");
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM orders WHERE userId=? AND side='BUY' AND status='FILLED'",
+                    Integer.class, USER_ID)).isEqualTo(1);
+        }
+    }
+
+    @Test
     void marketBuyWithoutEnoughCashIsPersistedAsRejected() throws Exception {
         jdbc.update("DELETE FROM orders WHERE userId=? AND side='CASH_IN'", USER_ID);
         insertCash(1);
 
         mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
                         .contentType("application/json")
-                        .content(orderRequest("BUY", "MARKET", null)))
+                        .content(orderRequest("BUY", "MARKET", 1, null)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.rejectionReason", containsString("Fondos insuficientes")));
@@ -138,7 +208,7 @@ class OrderRestControllerIntegrationTest {
     void marketSellWithoutEnoughSharesIsPersistedAsRejected() throws Exception {
         mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
                         .contentType("application/json")
-                        .content(orderRequest("SELL", "MARKET", null)))
+                        .content(orderRequest("SELL", "MARKET", 1, null)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.rejectionReason", containsString("Tenencia insuficiente")));
@@ -150,7 +220,7 @@ class OrderRestControllerIntegrationTest {
     void limitOrderCanBeCancelledWhileNew() throws Exception {
         String response = mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
                         .contentType("application/json")
-                        .content(orderRequest("BUY", "LIMIT", BigDecimal.valueOf(100))))
+                        .content(orderRequest("BUY", "LIMIT", 1, BigDecimal.valueOf(100))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("NEW"))
                 .andReturn()
@@ -196,10 +266,10 @@ class OrderRestControllerIntegrationTest {
                 """, USER_ID, amount, Timestamp.valueOf(LocalDateTime.now()));
     }
 
-    private String orderRequest(String side, String type, BigDecimal price) {
+    private String orderRequest(String side, String type, long quantity, BigDecimal price) {
         return """
-                {"instrumentId":%d,"side":"%s","type":"%s","quantity":1%s}
-                """.formatted(INSTRUMENT_ID, side, type,
+                {"instrumentId":%d,"side":"%s","type":"%s","quantity":%d%s}
+                """.formatted(INSTRUMENT_ID, side, type, quantity,
                 price == null ? "" : ",\"price\":" + price);
     }
 

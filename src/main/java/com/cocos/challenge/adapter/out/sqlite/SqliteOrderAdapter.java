@@ -19,6 +19,12 @@ public class SqliteOrderAdapter implements OrderPort {
     }
 
     @Override
+    public void lockOrderSubmissions() {
+        jdbc.execute("PRAGMA busy_timeout = 10000");
+        jdbc.update("UPDATE orders SET status = status WHERE id = -1");
+    }
+
+    @Override
     public long insert(long instrumentId, long userId, long quantity, BigDecimal price,
                        Order.Type type, Order.Side side, Order.Status status, LocalDateTime datetime) {
         jdbc.update("""

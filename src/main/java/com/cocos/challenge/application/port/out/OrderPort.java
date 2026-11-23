@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface OrderPort {
+    void lockOrderSubmissions();
+
     long insert(long instrumentId, long userId, long quantity, BigDecimal price,
                 Order.Type type, Order.Side side, Order.Status status, LocalDateTime datetime);
     Optional<Order> findByIdAndUserId(long orderId, long userId);
