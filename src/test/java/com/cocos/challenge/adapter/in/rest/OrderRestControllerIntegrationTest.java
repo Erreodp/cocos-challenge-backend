@@ -235,6 +235,143 @@ class OrderRestControllerIntegrationTest {
         assertOrderStatus("CANCELLED");
     }
 
+    @Test
+    void searchMatchesTickerAndNameWithoutCaseSensitivity() throws Exception {
+        mockMvc.perform(get("/api/instruments").param("query", "ggal"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("GGAL"));
+        mockMvc.perform(get("/api/instruments").param("query", "Grupo Financiero"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("GGAL"));
+    }
+
+    @Test
+    void limitBuyReservesCashAndCancellationReleasesIt() throws Exception {
+        String response = mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":2,\"price\":100.25}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andReturn().getResponse().getContentAsString();
+        long orderId = objectMapper.readTree(response).get("id").asLong();
+
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableCash").value(999799.5));
+        mockMvc.perform(post("/api/users/{userId}/orders/{orderId}/cancel", USER_ID, orderId))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableCash").value(1_000_000));
+    }
+
+    @Test
+    void limitSellReservesSharesAndRejectsAnExcessSale() throws Exception {
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(orderRequest("BUY", "MARKET", 3, null)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("FILLED"));
+        String response = mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"SELL\",\"type\":\"LIMIT\",\"quantity\":2,\"price\":1000}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("NEW"))
+                .andReturn().getResponse().getContentAsString();
+        long orderId = objectMapper.readTree(response).get("id").asLong();
+
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions[0].quantity").value(3))
+                .andExpect(jsonPath("$.positions[0].availableQuantity").value(1));
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(orderRequest("SELL", "MARKET", 2, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+        mockMvc.perform(post("/api/users/{userId}/orders/{orderId}/cancel", USER_ID, orderId))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions[0].availableQuantity").value(3));
+    }
+
+    @Test
+    void limitOrdersWithoutAvailableCashOrSharesArePersistedAsRejected() throws Exception {
+        jdbc.update("DELETE FROM orders WHERE userId=? AND side='CASH_IN'", USER_ID);
+        insertCash(1);
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":1,\"price\":100}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason", containsString("Fondos insuficientes")));
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"SELL\",\"type\":\"LIMIT\",\"quantity\":1,\"price\":100}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason", containsString("Tenencia insuficiente")));
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE userId=? AND status='REJECTED'", Integer.class, USER_ID))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void marketSellCanBeSubmittedByAmountUsingWholeShares() throws Exception {
+        BigDecimal price = latestPrice();
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(orderRequest("BUY", "MARKET", 3, null)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("FILLED"));
+
+        BigDecimal amount = price.multiply(BigDecimal.valueOf(2)).add(BigDecimal.ONE);
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "instrumentId", INSTRUMENT_ID,
+                                "side", "SELL",
+                                "type", "MARKET",
+                                "amount", amount))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FILLED"))
+                .andExpect(jsonPath("$.quantity").value(2));
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions[0].quantity").value(1));
+    }
+
+    @Test
+    void invalidAmountAndLimitPricePrecisionReturnBadRequest() throws Exception {
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"BUY\",\"type\":\"MARKET\",\"amount\":1.001}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":1,\"price\":1.001}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/users/{userId}/orders", USER_ID)
+                        .contentType("application/json")
+                        .content("{\"instrumentId\":47,\"side\":\"BUY\",\"type\":\"MARKET\",\"quantity\":1,\"price\":1}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void monetaryTotalsRemainExactAcrossRepeatedFractionalPriceRows() throws Exception {
+        jdbc.update("DELETE FROM orders WHERE userId=?", USER_ID);
+        insertCash(1_000_000);
+        for (int i = 0; i < 10; i++) {
+            jdbc.update("""
+                    INSERT INTO orders (instrumentId,userId,size,price,type,side,status,datetime)
+                    VALUES (47,?,1,0.10,'MARKET','BUY','FILLED',?)
+                    """, USER_ID, Timestamp.valueOf(LocalDateTime.now()));
+        }
+        mockMvc.perform(get("/api/users/{userId}/portfolio", USER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cashBalance").value(999999.0))
+                .andExpect(jsonPath("$.positions[0].quantity").value(10))
+                .andExpect(jsonPath("$.positions[0].profitLoss").value(9257.5));
+    }
+
     private BigDecimal latestPrice() {
         return jdbc.queryForObject("""
                 SELECT m.close

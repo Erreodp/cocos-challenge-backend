@@ -42,8 +42,14 @@ public class OrderApplicationService implements SubmitOrderUseCase, CancelOrderU
         }
         if (hasQuantity && quantity <= 0) throw new ApplicationException.BadRequest("quantity debe ser mayor que cero");
         if (hasAmount && amount.signum() <= 0) throw new ApplicationException.BadRequest("amount debe ser mayor que cero");
+        if (hasAmount && amount.stripTrailingZeros().scale() > 2) {
+            throw new ApplicationException.BadRequest("amount admite hasta dos decimales");
+        }
         if (type == Order.Type.LIMIT && (price == null || price.signum() <= 0)) {
             throw new ApplicationException.BadRequest("price es obligatorio y positivo para órdenes LIMIT");
+        }
+        if (type == Order.Type.LIMIT && price.stripTrailingZeros().scale() > 2) {
+            throw new ApplicationException.BadRequest("price admite hasta dos decimales");
         }
         if (type == Order.Type.MARKET && price != null) {
             throw new ApplicationException.BadRequest("No se debe informar price para órdenes MARKET");

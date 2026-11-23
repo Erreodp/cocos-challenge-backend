@@ -2,7 +2,10 @@ package com.cocos.challenge.adapter.out.sqlite;
 
 import com.cocos.challenge.application.port.out.PortfolioPort;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -10,29 +13,34 @@ import org.springframework.stereotype.Repository;
 public class SqlitePortfolioAdapter implements PortfolioPort {
     private final JdbcTemplate jdbc;
 
-    public SqlitePortfolioAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
+    public SqlitePortfolioAdapter(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @Override
     public BigDecimal cashBalance(long userId) {
-        return decimal("""
-                SELECT COALESCE(SUM(CASE
-                  WHEN o.side='CASH_IN' THEN o.size
-                  WHEN o.side='CASH_OUT' THEN -o.size
-                  WHEN o.side='BUY' THEN -(o.size*o.price)
-                  WHEN o.side='SELL' THEN o.size*o.price ELSE 0 END),0)
-                FROM orders o JOIN instruments i ON i.id=o.instrumentId
+        return jdbc.query("""
+                SELECT o.side,o.size,o.price FROM orders o
+                JOIN instruments i ON i.id=o.instrumentId
                 WHERE o.userId=? AND o.status='FILLED'
                   AND (i.type='MONEDA' OR o.side IN ('BUY','SELL'))
-                """, userId);
+                """, rs -> {
+            BigDecimal total = BigDecimal.ZERO;
+            while (rs.next()) {
+                BigDecimal size = BigDecimal.valueOf(rs.getLong("size"));
+                BigDecimal value = size.multiply(decimal(rs.getBigDecimal("price")));
+                total = switch (rs.getString("side")) {
+                    case "CASH_IN", "SELL" -> total.add(value);
+                    case "CASH_OUT", "BUY" -> total.subtract(value);
+                    default -> total;
+                };
+            }
+            return total;
+        }, userId);
     }
 
     @Override
     public BigDecimal reservedCash(long userId) {
-        return decimal("""
-                SELECT COALESCE(SUM(o.size*o.price),0) FROM orders o
-                JOIN instruments i ON i.id=o.instrumentId
+        return sumMoney("""
+                SELECT o.size,o.price FROM orders o JOIN instruments i ON i.id=o.instrumentId
                 WHERE o.userId=? AND o.side='BUY' AND o.type='LIMIT'
                   AND o.status='NEW' AND i.type<>'MONEDA'
                 """, userId);
@@ -60,29 +68,24 @@ public class SqlitePortfolioAdapter implements PortfolioPort {
 
     @Override
     public BigDecimal filledBuyCost(long userId) {
-        return decimal("""
-                SELECT COALESCE(SUM(o.size*o.price),0) FROM orders o
-                JOIN instruments i ON i.id=o.instrumentId
+        return sumMoney("""
+                SELECT o.size,o.price FROM orders o JOIN instruments i ON i.id=o.instrumentId
                 WHERE o.userId=? AND o.status='FILLED' AND o.side='BUY' AND i.type<>'MONEDA'
                 """, userId);
     }
 
     @Override
     public BigDecimal filledSellProceeds(long userId) {
-        return decimal("""
-                SELECT COALESCE(SUM(o.size*o.price),0) FROM orders o
-                JOIN instruments i ON i.id=o.instrumentId
+        return sumMoney("""
+                SELECT o.size,o.price FROM orders o JOIN instruments i ON i.id=o.instrumentId
                 WHERE o.userId=? AND o.status='FILLED' AND o.side='SELL' AND i.type<>'MONEDA'
                 """, userId);
     }
 
     @Override
     public List<PositionRow> positions(long userId) {
-        return jdbc.query("""
-                SELECT i.id,i.ticker,i.name,
-                  SUM(CASE WHEN o.side='BUY' THEN o.size ELSE -o.size END) AS quantity,
-                  SUM(CASE WHEN o.side='BUY' THEN o.size*o.price ELSE 0 END) AS totalBuys,
-                  SUM(CASE WHEN o.side='SELL' THEN o.size*o.price ELSE 0 END) AS totalSales,
+        List<OrderPosition> rows = jdbc.query("""
+                SELECT i.id,i.ticker,i.name,o.side,o.size,o.price,
                   m.close AS marketPrice,m.previousClose AS previousClose
                 FROM orders o JOIN instruments i ON i.id=o.instrumentId
                 LEFT JOIN marketdata m ON m.id=(
@@ -90,17 +93,63 @@ public class SqlitePortfolioAdapter implements PortfolioPort {
                   ORDER BY latest.date DESC,latest.id DESC LIMIT 1)
                 WHERE o.userId=? AND o.status='FILLED' AND o.side IN ('BUY','SELL')
                   AND i.type<>'MONEDA'
-                GROUP BY i.id,i.ticker,i.name,m.close
-                HAVING SUM(CASE WHEN o.side='BUY' THEN o.size ELSE -o.size END)>0
-                ORDER BY i.ticker
-                """, (rs, row) -> new PositionRow(rs.getLong("id"), rs.getString("ticker"),
-                rs.getString("name"), rs.getLong("quantity"), rs.getBigDecimal("totalBuys"),
-                rs.getBigDecimal("totalSales"), rs.getBigDecimal("marketPrice"),
+                ORDER BY i.ticker,o.id
+                """, (rs, row) -> new OrderPosition(rs.getLong("id"), rs.getString("ticker"),
+                rs.getString("name"), rs.getString("side"), rs.getLong("size"),
+                decimal(rs.getBigDecimal("price")), rs.getBigDecimal("marketPrice"),
                 rs.getBigDecimal("previousClose")), userId);
+
+        Map<Long, PositionAccumulator> grouped = new LinkedHashMap<>();
+        for (OrderPosition order : rows) {
+            PositionAccumulator position = grouped.computeIfAbsent(order.id(), ignored ->
+                    new PositionAccumulator(order));
+            if ("BUY".equals(order.side())) {
+                position.quantity += order.quantity();
+                position.buys = position.buys.add(order.price().multiply(BigDecimal.valueOf(order.quantity())));
+            } else {
+                position.quantity -= order.quantity();
+                position.sales = position.sales.add(order.price().multiply(BigDecimal.valueOf(order.quantity())));
+            }
+        }
+        List<PositionRow> positions = new ArrayList<>();
+        grouped.values().stream().filter(position -> position.quantity > 0).forEach(position ->
+                positions.add(new PositionRow(position.id, position.ticker, position.name,
+                        position.quantity, position.buys, position.sales,
+                        position.marketPrice, position.previousClose)));
+        return positions;
     }
 
-    private BigDecimal decimal(String sql, long userId) {
-        BigDecimal value = jdbc.queryForObject(sql, BigDecimal.class, userId);
+    private BigDecimal sumMoney(String sql, long userId) {
+        return jdbc.query(sql, rs -> {
+            BigDecimal total = BigDecimal.ZERO;
+            while (rs.next()) {
+                total = total.add(decimal(rs.getBigDecimal("price"))
+                        .multiply(BigDecimal.valueOf(rs.getLong("size"))));
+            }
+            return total;
+        }, userId);
+    }
+
+    private static BigDecimal decimal(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private record OrderPosition(long id, String ticker, String name, String side, long quantity,
+                                 BigDecimal price, BigDecimal marketPrice, BigDecimal previousClose) { }
+
+    private static final class PositionAccumulator {
+        private final long id;
+        private final String ticker;
+        private final String name;
+        private final BigDecimal marketPrice;
+        private final BigDecimal previousClose;
+        private long quantity;
+        private BigDecimal buys = BigDecimal.ZERO;
+        private BigDecimal sales = BigDecimal.ZERO;
+
+        private PositionAccumulator(OrderPosition order) {
+            id = order.id(); ticker = order.ticker(); name = order.name();
+            marketPrice = order.marketPrice(); previousClose = order.previousClose();
+        }
     }
 }

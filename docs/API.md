@@ -134,13 +134,18 @@ El cuerpo debe incluir `instrumentId`, `side` y `type`, y exactamente uno de
 | `side` | Obligatorio | `BUY` o `SELL`. |
 | `type` | Obligatorio | `MARKET` o `LIMIT`. |
 | `quantity` | Excluyente con `amount` | Cantidad entera positiva de acciones; no se admiten fracciones. |
-| `amount` | Excluyente con `quantity` | Monto positivo en ARS; calcula `floor(amount / precio)` acciones. |
-| `price` | Condicional | Obligatorio y positivo para `LIMIT`; debe omitirse para `MARKET`. |
+| `amount` | Excluyente con `quantity` | Monto positivo en ARS con hasta dos decimales; calcula `floor(amount / precio)` acciones. |
+| `price` | Condicional | Obligatorio y positivo, con hasta dos decimales, para `LIMIT`; debe omitirse para `MARKET`. |
 
 Para una orden `MARKET`, el precio usado es el `close` más reciente. Para una
 orden `LIMIT`, se usa el `price` solicitado. `MARKET` se registra como `FILLED`;
 `LIMIT` se registra como `NEW`. No se simula la ejecución posterior de órdenes
 LIMIT.
+
+Los importes de entrada se limitan a dos decimales, de acuerdo con la precisión
+monetaria del esquema provisto. Los totales de órdenes se acumulan con
+`BigDecimal` en la aplicación para evitar sumas monetarias en punto flotante de
+SQLite.
 
 La validación de fondos/tenencias considera el saldo y la posición ejecutados,
 menos las reservas de otras órdenes LIMIT `NEW`. Si no hay fondos o acciones

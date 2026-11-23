@@ -46,13 +46,12 @@ reemplazar. El archivo de base local está excluido por `.gitignore`.
 - `SqliteDatabaseInitializerTest`: inicialización, carga única y rechazo de
   esquema parcial.
 - `OrderPolicyTest`: políticas unitarias de órdenes.
-- `OrderRestControllerIntegrationTest`: ocho flujos HTTP con Spring y SQLite
+- `OrderRestControllerIntegrationTest`: quince flujos HTTP con Spring y SQLite
   temporal: compra MARKET y reflejo en portfolio, cálculo entero desde `amount`,
   compra seguida de venta, compras concurrentes con saldo para una sola,
   rechazos por fondos/tenencia, orden LIMIT cancelada y disponibilidad de Swagger.
-- La suite completa (`mvn test`) pasó con Temurin JDK 21.0.13.1 y Maven 3.9.11:
-  13 pruebas, sin fallos ni errores. Ambos se descargaron en el directorio
-  temporal de la sesión y no quedaron instalados globalmente.
+- La suite completa (`mvn test`) pasó en la sesión de revisión: 20 pruebas,
+  sin fallos ni errores.
 - Para repetir la validación en otro entorno, comprobar que Java 21 y Maven
   estén disponibles y ejecutar `mvn test`.
 
@@ -73,10 +72,13 @@ simultáneas donde solo una dispone de saldo suficiente.
 Las pruebas de integración usan una base con nombre aleatorio en el directorio
 temporal y la eliminan al terminar.
 
+Los importes de entrada aceptan hasta dos decimales. El adaptador de portfolio
+acumula saldos y costos en Java con `BigDecimal`, evitando sumas monetarias
+realizadas por SQLite en punto flotante.
+
 ## Próximos pasos sugeridos
 
-1. Añadir cobertura de integración para búsqueda y validaciones de entrada.
-2. Contrastar las reglas restantes del portfolio con el requerimiento y
+1. Contrastar las reglas restantes del portfolio con el requerimiento y
    documentar cualquier supuesto adicional en `API.md`.
 
 ## Cuidado con los cambios locales
