@@ -83,7 +83,7 @@ public class SqlitePortfolioAdapter implements PortfolioPort {
                   SUM(CASE WHEN o.side='BUY' THEN o.size ELSE -o.size END) AS quantity,
                   SUM(CASE WHEN o.side='BUY' THEN o.size*o.price ELSE 0 END) AS totalBuys,
                   SUM(CASE WHEN o.side='SELL' THEN o.size*o.price ELSE 0 END) AS totalSales,
-                  m.close AS marketPrice
+                  m.close AS marketPrice,m.previousClose AS previousClose
                 FROM orders o JOIN instruments i ON i.id=o.instrumentId
                 LEFT JOIN marketdata m ON m.id=(
                   SELECT latest.id FROM marketdata latest WHERE latest.instrumentId=i.id
@@ -95,7 +95,8 @@ public class SqlitePortfolioAdapter implements PortfolioPort {
                 ORDER BY i.ticker
                 """, (rs, row) -> new PositionRow(rs.getLong("id"), rs.getString("ticker"),
                 rs.getString("name"), rs.getLong("quantity"), rs.getBigDecimal("totalBuys"),
-                rs.getBigDecimal("totalSales"), rs.getBigDecimal("marketPrice")), userId);
+                rs.getBigDecimal("totalSales"), rs.getBigDecimal("marketPrice"),
+                rs.getBigDecimal("previousClose")), userId);
     }
 
     private BigDecimal decimal(String sql, long userId) {

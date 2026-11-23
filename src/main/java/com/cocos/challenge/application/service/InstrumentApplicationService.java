@@ -1,5 +1,6 @@
 package com.cocos.challenge.application.service;
 
+import com.cocos.challenge.application.exception.ApplicationException;
 import com.cocos.challenge.application.port.in.SearchInstrumentsUseCase;
 import com.cocos.challenge.application.port.out.InstrumentCatalogPort;
 import com.cocos.challenge.domain.model.Instrument;

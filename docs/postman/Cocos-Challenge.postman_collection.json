@@ -1,0 +1,195 @@
+{
+  "info": {
+    "_postman_id": "791eb131-3f21-43a6-bc66-3ccecc271774",
+    "name": "Cocos Challenge API",
+    "description": "Ejemplos para búsqueda de instrumentos, portfolio y envío/cancelación de órdenes. Requiere una instancia local con la base inicializada.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Buscar instrumentos",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/instruments?query={{query}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "instruments"
+          ],
+          "query": [
+            {
+              "key": "query",
+              "value": "{{query}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consultar portfolio",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/users/{{userId}}/portfolio",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "{{userId}}",
+            "portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Enviar orden MARKET por cantidad",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/users/{{userId}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "{{userId}}",
+            "orders"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Enviar orden MARKET por monto",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": 10000\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/users/{{userId}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "{{userId}}",
+            "orders"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Enviar orden LIMIT",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('La orden queda NEW', function () {",
+              "    pm.response.to.have.status(201);",
+              "    const order = pm.response.json();",
+              "    pm.expect(order.status).to.eql('NEW');",
+              "    pm.collectionVariables.set('orderId', order.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1,\n  \"price\": 100\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/users/{{userId}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "{{userId}}",
+            "orders"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cancelar última orden LIMIT",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/users/{{userId}}/orders/{{orderId}}/cancel",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "{{userId}}",
+            "orders",
+            "{{orderId}}",
+            "cancel"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "userId",
+      "value": "1"
+    },
+    {
+      "key": "instrumentId",
+      "value": "47"
+    },
+    {
+      "key": "query",
+      "value": "GGAL"
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    }
+  ]
+}

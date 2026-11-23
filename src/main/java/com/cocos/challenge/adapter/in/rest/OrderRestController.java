@@ -2,11 +2,13 @@ package com.cocos.challenge.adapter.in.rest;
 
 import com.cocos.challenge.application.port.in.CancelOrderUseCase;
 import com.cocos.challenge.application.port.in.SubmitOrderUseCase;
-import com.cocos.challenge.application.service.ApplicationException;
+import com.cocos.challenge.application.exception.ApplicationException;
 import com.cocos.challenge.domain.model.Order;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Locale;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/users/{userId}/orders")
+@Tag(name = "Órdenes", description = "Envío y cancelación de órdenes de inversión")
 public class OrderRestController {
     private final SubmitOrderUseCase submit;
     private final CancelOrderUseCase cancel;
@@ -28,6 +31,8 @@ public class OrderRestController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Enviar una orden", description = "Informar exactamente uno de quantity o amount. "
+            + "MARKET se ejecuta al último cierre; LIMIT se registra NEW.")
     public OrderResponse submit(@PathVariable long userId, @RequestBody OrderRequest request) {
         if (request.instrumentId() == null) throw new ApplicationException.BadRequest("instrumentId es obligatorio");
         return OrderResponse.from(submit.submit(userId, request.instrumentId(),
@@ -36,6 +41,7 @@ public class OrderRestController {
     }
 
     @PostMapping("/{orderId}/cancel")
+    @Operation(summary = "Cancelar una orden", description = "Solo cancela órdenes en estado NEW.")
     public OrderResponse cancel(@PathVariable long userId, @PathVariable long orderId) {
         return OrderResponse.from(cancel.cancel(userId, orderId));
     }

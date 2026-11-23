@@ -1,4 +1,4 @@
-package com.cocos.challenge.application.service;
+package com.cocos.challenge.application.exception;
 
 public abstract class ApplicationException extends RuntimeException {
     protected ApplicationException(String message) {

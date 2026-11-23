@@ -13,6 +13,7 @@ public interface PortfolioPort {
     List<PositionRow> positions(long userId);
 
     record PositionRow(long instrumentId, String ticker, String name, long quantity,
-                       BigDecimal totalBuys, BigDecimal totalSales, BigDecimal marketPrice) {
+                       BigDecimal totalBuys, BigDecimal totalSales,
+                       BigDecimal marketPrice, BigDecimal previousClose) {
     }
 }

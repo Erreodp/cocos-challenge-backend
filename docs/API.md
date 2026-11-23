@@ -17,6 +17,10 @@ Las órdenes LIMIT `NEW` reservan efectivo o acciones.
 `totalValue = cashBalance + valor de mercado de las tenencias abiertas`.
 El rendimiento es una aproximación: `(valor de mercado + ventas históricas -
 compras históricas) / compras históricas * 100`; no es TIR.
+Cada posición también incluye `dailyReturnPercent`, calculado como
+`(close - previousClose) / previousClose * 100` con la última cotización
+disponible del instrumento. Si `previousClose` es cero o no está informado, el
+retorno diario se devuelve como `0.00`.
 
 ## Órdenes
 
@@ -44,3 +48,10 @@ La API no simula la ejecución posterior de órdenes LIMIT.
 Respuestas de error con `timestamp`, `status`, `error`, `message` y `path`.
 Entrada inválida: 400; usuario/instrumento/orden inexistente: 404; conflicto
 de estado o cotización faltante: 409.
+
+## Documentación interactiva
+
+Con la aplicación en ejecución, Swagger UI está disponible en
+`/swagger-ui/index.html` y la especificación OpenAPI JSON en `/v3/api-docs`.
+La colección de Postman está en `postman/Cocos-Challenge.postman_collection.json`;
+configurar sus variables `baseUrl`, `userId` e `instrumentId` para el entorno.

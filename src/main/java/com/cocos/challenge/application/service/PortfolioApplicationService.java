@@ -3,6 +3,7 @@ package com.cocos.challenge.application.service;
 import com.cocos.challenge.application.port.in.GetPortfolioUseCase;
 import com.cocos.challenge.application.port.out.AccountPort;
 import com.cocos.challenge.application.port.out.PortfolioPort;
+import com.cocos.challenge.application.exception.ApplicationException;
 import com.cocos.challenge.domain.model.Portfolio;
 import com.cocos.challenge.domain.model.Position;
 import java.math.BigDecimal;
@@ -49,7 +50,15 @@ public class PortfolioApplicationService implements GetPortfolioUseCase {
                 row.quantity() - portfolios.reservedQuantity(userId, row.instrumentId()),
                 row.marketPrice().setScale(2, RoundingMode.HALF_UP),
                 marketValue.setScale(2, RoundingMode.HALF_UP),
-                profit.setScale(2, RoundingMode.HALF_UP), percent(profit, row.totalBuys()));
+                profit.setScale(2, RoundingMode.HALF_UP), percent(profit, row.totalBuys()),
+                dailyReturnPercent(row.marketPrice(), row.previousClose()));
+    }
+
+    private BigDecimal dailyReturnPercent(BigDecimal marketPrice, BigDecimal previousClose) {
+        if (previousClose == null || previousClose.signum() == 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return percent(marketPrice.subtract(previousClose), previousClose);
     }
 
     private BigDecimal percent(BigDecimal amount, BigDecimal base) {

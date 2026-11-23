@@ -1,6 +1,6 @@
 package com.cocos.challenge.adapter.in.rest;
 
-import com.cocos.challenge.application.service.ApplicationException;
+import com.cocos.challenge.application.exception.ApplicationException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
