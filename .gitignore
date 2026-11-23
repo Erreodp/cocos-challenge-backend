@@ -3,3 +3,4 @@ target/
 *.iml
 .DS_Store
 /challenge-cocos.db*
+/cocos-demo.db*
