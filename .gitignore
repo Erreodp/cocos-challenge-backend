@@ -4,3 +4,5 @@ target/
 .DS_Store
 /challenge-cocos.db*
 /cocos-demo.db*
+
+/docs/agent.md
